@@ -19,8 +19,8 @@ use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::result::Result;
 
-use geom::{affine_pt, Affine, Point};
-use raster::Raster;
+use crate::geom::{affine_pt, Affine, Point};
+use crate::raster::Raster;
 
 #[derive(PartialEq, Eq, Hash)]
 struct Tag(u32);
@@ -450,13 +450,13 @@ fn get_bbox_raw(data: &[u8]) -> (i16, i16, i16, i16) {
     )
 }
 
-enum Glyph<'a> {
+pub enum Glyph<'a> {
     Empty,
     Simple(SimpleGlyph<'a>),
     Compound(CompoundGlyph<'a>),
 }
 
-struct SimpleGlyph<'a> {
+pub struct SimpleGlyph<'a> {
     data: &'a [u8],
 }
 
@@ -606,7 +606,7 @@ struct ContourSizes<'a> {
 
 impl<'a> Iterator for ContourSizes<'a> {
     type Item = usize;
-    fn next(&mut self) -> Option<(usize)> {
+    fn next(&mut self) -> Option<usize> {
         if self.contours_remaining == 0 {
             None
         } else {
@@ -623,7 +623,7 @@ impl<'a> Iterator for ContourSizes<'a> {
     }
 }
 
-struct CompoundGlyph<'a> {
+pub struct CompoundGlyph<'a> {
     data: &'a [u8],
 }
 
@@ -750,7 +750,7 @@ pub struct HMetrics {
 }
 
 impl<'a> Font<'a> {
-    fn scale(&self, size: u32) -> f32 {
+    pub fn scale(&self, size: u32) -> f32 {
         let ppem = self.head.units_per_em();
         (size as f32) / (ppem as f32)
     }
@@ -773,7 +773,7 @@ impl<'a> Font<'a> {
         (metrics, z)
     }
 
-    fn render_glyph_inner(&self, raster: &mut Raster, z: &Affine, glyph: &Glyph) {
+    pub fn render_glyph_inner(&self, raster: &mut Raster, z: &Affine, glyph: &Glyph) {
         match *glyph {
             Glyph::Simple(ref s) => {
                 let mut p = s.points();
@@ -837,7 +837,7 @@ impl<'a> Font<'a> {
         }
     }
 
-    fn get_glyph(&self, glyph_ix: u16) -> Option<Glyph> {
+    pub fn get_glyph(&self, glyph_ix: u16) -> Option<Glyph> {
         if glyph_ix >= self.maxp.num_glyphs() {
             return None;
         }
@@ -1162,7 +1162,7 @@ pub struct GlyphBitmap {
 #[cfg(test)]
 mod tests {
 
-    use font::parse;
+    use crate::font::parse;
 
     static FONT_DATA: &'static [u8] =
         include_bytes!("../fonts/notomono-hinted/NotoMono-Regular.ttf");
@@ -1199,7 +1199,7 @@ mod tests {
 
     #[test]
     fn test_glyph_lookup_format_4() {
-        use font::EncodingFormat4;
+        use crate::font::EncodingFormat4;
         let encoding4 = EncodingFormat4(KOSUGI_MARU_ENCODING_4);
         for kanji in KANJI.chars() {
             assert!(encoding4.lookup_glyph_id(kanji as u16).is_some());

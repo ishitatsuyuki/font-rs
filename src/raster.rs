@@ -14,8 +14,8 @@
 
 //! An antialiased rasterizer for quadratic Beziers
 
-use accumulate::accumulate;
-use geom::Point;
+use crate::accumulate::accumulate;
+use crate::geom::Point;
 
 // TODO: sort out crate structure. Right now we want this when compiling raster as a binary,
 // but need it commented out when compiling showttf
@@ -25,6 +25,43 @@ pub struct Raster {
     w: usize,
     h: usize,
     a: Vec<f32>,
+    coeff_x: Vec<[f32; 15]>,
+    coeff_y: Vec<[[f32; 4]; 5]>,
+}
+
+fn horner(coeff: &[f32], x: f32) -> f32 {
+    coeff.iter().fold(0., |acc, &c| acc * x + c)
+}
+
+fn indefinite_int(coeff_x: &[f32; 15], coeff_y: &[[f32; 4]; 5], x: f32, y: f32, dxdy: f32) -> f32 {
+    assert!(x >= 0. && x <= 1. && y >= 0. && y <= 1.);
+    y * (horner(&coeff_y[0], y) * horner(&coeff_x[0..5], x) +
+        if dxdy == 0. { 0. } else {
+            let ay = y * dxdy;
+            let ay2 = ay * ay;
+            let ay3 = ay2 * ay;
+            let ay4 = ay2 * ay2;
+            -horner(&coeff_y[1], y) * horner(&coeff_x[5..9], x) * ay
+                + horner(&coeff_y[2], y) * horner(&coeff_x[9..12], x) * ay2
+                - horner(&coeff_y[3], y) * horner(&coeff_x[12..14], x) * ay3
+                + horner(&coeff_y[4], y) * horner(&coeff_x[14..15], x) * ay4
+        })
+}
+
+fn x_coeffs(coeff_x: &[f32; 4]) -> [f32; 15] {
+    [coeff_x[3] / 4., coeff_x[2] / 3., coeff_x[1] / 2., coeff_x[0], 0.,
+        coeff_x[3], coeff_x[2], coeff_x[1], coeff_x[0],
+        coeff_x[3] * 3., coeff_x[2] * 2., coeff_x[1],
+        coeff_x[3] * 6., coeff_x[2] * 2.,
+        coeff_x[3] * 6., ]
+}
+
+fn y_coeffs(coeff_y: &[f32; 4]) -> [[f32; 4]; 5] {
+    [[coeff_y[3] / 4., coeff_y[2] / 3., coeff_y[1] / 2., coeff_y[0]],
+        [coeff_y[3] / 20., coeff_y[2] / 12., coeff_y[1] / 6., coeff_y[0] / 2.],
+        [coeff_y[3] / 120., coeff_y[2] / 60., coeff_y[1] / 24., coeff_y[0] / 6.],
+        [coeff_y[3] / 840., coeff_y[2] / 360., coeff_y[1] / 120., coeff_y[0] / 24.],
+        [coeff_y[3] / 6720., coeff_y[2] / 2520., coeff_y[1] / 720., coeff_y[0] / 120.], ]
 }
 
 // TODO: is there a faster way? (investigate whether approx recip is good enough)
@@ -34,16 +71,24 @@ fn recip(x: f32) -> f32 {
 
 impl Raster {
     pub fn new(w: usize, h: usize) -> Raster {
+        let b = 0.;
+        let c = 0.;
+        let coeffs = [[0., 0., -c, b / 6. + c],
+            [b / 6., b / 2. + c, -5. * b / 2. - 2. * c + 3., 3. * b / 2. + c - 2.],
+            [1. - b / 3., 0., 2. * b + c - 3., -3. * b / 2. - c + 2.],
+            [b / 6., -b / 2. - c, b / 2. + 2. * c, -b / 6. - c]];
         Raster {
             w: w,
             h: h,
             a: vec![0.0; w * h + 4],
+            coeff_x: coeffs.iter().rev().map(x_coeffs).collect(),
+            coeff_y: coeffs.iter().rev().map(y_coeffs).collect(),
         }
     }
 
     pub fn draw_line(&mut self, p0: &Point, p1: &Point) {
         //println!("draw_line {} {}", p0, p1);
-        if (p0.y - p1.y).abs() <= core::f32::EPSILON {
+        if (p0.y - p1.y).abs() <= f32::EPSILON {
             return;
         }
         let (dir, p0, p1) = if p0.y < p1.y {
@@ -58,46 +103,87 @@ impl Raster {
             x -= p0.y * dxdy;
         }
         for y in y0..self.h.min(p1.y.ceil() as usize) {
-            let linestart = y * self.w;
-            let dy = ((y + 1) as f32).min(p1.y) - (y as f32).max(p0.y);
+            let y0 = (y as f32).max(p0.y);
+            let y1 = ((y + 1) as f32).min(p1.y);
+            let dy = y1 - y0;
             let xnext = x + dxdy * dy;
-            let d = dy * dir;
             let (x0, x1) = if x < xnext { (x, xnext) } else { (xnext, x) };
             let x0floor = x0.floor();
-            let x0i = x0floor as i32;
+            let x0i = x0floor as isize;
             let x1ceil = x1.ceil();
-            let x1i = x1ceil as i32;
-            if x1i <= x0i + 1 {
-                let xmf = 0.5 * (x + xnext) - x0floor;
-                let linestart_x0i = linestart as isize + x0i as isize;
-                if linestart_x0i < 0 {
-                    continue; // oob index
-                }
-                self.a[linestart_x0i as usize] += d - d * xmf;
-                self.a[linestart_x0i as usize + 1] += d * xmf;
-            } else {
-                let s = (x1 - x0).recip();
-                let x0f = x0 - x0floor;
-                let a0 = 0.5 * s * (1.0 - x0f) * (1.0 - x0f);
-                let x1f = x1 - x1ceil + 1.0;
-                let am = 0.5 * s * x1f * x1f;
-                let linestart_x0i = linestart as isize + x0i as isize;
-                if linestart_x0i < 0 {
-                    continue; // oob index
-                }
-                self.a[linestart_x0i as usize] += d * a0;
-                if x1i == x0i + 2 {
-                    self.a[linestart_x0i as usize + 1] += d * (1.0 - a0 - am);
-                } else {
-                    let a1 = s * (1.5 - x0f);
-                    self.a[linestart_x0i as usize + 1] += d * (a1 - a0);
-                    for xi in x0i + 2..x1i - 1 {
-                        self.a[linestart + xi as usize] += d * s;
+            let x1i = x1ceil as isize;
+            for j in 2..3 {
+                for i in 2..3 {
+                    let ci = &self.coeff_x[i];
+                    let cj = &self.coeff_y[j];
+                    let linestart_x0i = ((y + j) * self.w) as isize + x0i + i as isize;
+                    if linestart_x0i < 0 {
+                        continue; // oob index
                     }
-                    let a2 = a1 + (x1i - x0i - 3) as f32 * s;
-                    self.a[linestart + (x1i - 1) as usize] += d * (1.0 - a2 - am);
+                    if x1i <= x0i + 1 {
+                        let top = indefinite_int(ci, cj, 1. - xnext.fract(), y1.fract(), -dxdy);
+                        let btm = indefinite_int(ci, cj, 1. - x.fract(), y0.fract(), -dxdy);
+                        let int = top - btm;
+                        let full = indefinite_int(ci, cj, 1., y1.fract(), 0.) - indefinite_int(ci, cj, 1., y0.fract(), 0.);
+
+                        self.a[linestart_x0i as usize] += dir * int;
+                        self.a[linestart_x0i as usize + 1] += dir * (full - int);
+                    } else {
+                        let s = (x1 - x0).recip();
+
+                        if x < xnext {
+                            let mut y_inter = y0 + s * (1.0 - x.fract()) * dy;
+                            let top = indefinite_int(ci, cj, 0., y_inter.fract(), -dxdy);
+                            let btm = indefinite_int(ci, cj, 1. - x.fract(), y0.fract(), -dxdy);
+                            let mut int = top - btm;
+                            self.a[linestart_x0i as usize] += dir * int;
+                            let mut rect_btm = indefinite_int(ci, cj, 1., y0.fract(), 0.);
+                            for xi in x0i + 1..x1i - 1 {
+                                let rect_top = indefinite_int(ci, cj, 1., y_inter.fract(), 0.);
+                                let y_inter_new = y_inter + s * dy;
+                                let top = indefinite_int(ci, cj, 0., y_inter_new.fract(), -dxdy);
+                                let btm = indefinite_int(ci, cj, 1., y_inter.fract(), -dxdy);
+                                let int_new = top - btm;
+                                self.a[(linestart_x0i - x0i + xi) as usize] += dir * (rect_top - rect_btm + int_new - int);
+                                rect_btm = rect_top;
+                                int = int_new;
+                                y_inter = y_inter_new;
+                            }
+                            let rect_top = indefinite_int(ci, cj, 1., y_inter.fract(), 0.);
+                            let top = indefinite_int(ci, cj, 1. - xnext.fract(), y1.fract(), -dxdy);
+                            let btm = indefinite_int(ci, cj, 1., y_inter.fract(), -dxdy);
+                            let int_new = top - btm;
+                            self.a[(linestart_x0i - x0i + x1i - 1) as usize] += dir * (rect_top - rect_btm + int_new - int);
+                            let rect_top_final = indefinite_int(ci, cj, 1., y1.fract(), 0.);
+                            self.a[(linestart_x0i - x0i + x1i) as usize] += dir * (rect_top_final - rect_top - int);
+                        } else {
+                            let mut y_inter = y1 - s * (1.0 - x.fract()) * dy;
+                            let top = indefinite_int(ci, cj, 1. - x.fract(), y1.fract(), -dxdy);
+                            let btm = indefinite_int(ci, cj, 0., y_inter.fract(), -dxdy);
+                            let mut int = top - btm;
+                            self.a[linestart_x0i as usize] += dir * int;
+                            let mut rect_top = indefinite_int(ci, cj, 1., y1.fract(), 0.);
+                            for xi in x0i + 1..x1i - 1 {
+                                let rect_btm = indefinite_int(ci, cj, 1., y_inter.fract(), 0.);
+                                let y_inter_new = y_inter - s * dy;
+                                let top = indefinite_int(ci, cj, 1., y_inter.fract(), -dxdy);
+                                let btm = indefinite_int(ci, cj, 0., y_inter_new.fract(), -dxdy);
+                                let int_new = top - btm;
+                                self.a[(linestart_x0i - x0i + xi) as usize] += dir * (rect_top - rect_btm + int_new - int);
+                                rect_top = rect_btm;
+                                int = int_new;
+                                y_inter = y_inter_new;
+                            }
+                            let rect_btm = indefinite_int(ci, cj, 1., y_inter.fract(), 0.);
+                            let top = indefinite_int(ci, cj, 1., y_inter.fract(), -dxdy);
+                            let btm = indefinite_int(ci, cj, 1. - xnext.fract(), y0.fract(), -dxdy);
+                            let int_new = top - btm;
+                            self.a[(linestart_x0i - x0i + x1i - 1) as usize] += dir * (rect_top - rect_btm + int_new - int);
+                            let rect_btm_final = indefinite_int(ci, cj, 1., y1.fract(), 0.);
+                            self.a[(linestart_x0i - x0i + x1i) as usize] += dir * (rect_btm - rect_btm_final - int);
+                        }
+                    }
                 }
-                self.a[linestart + x1i as usize] += d * am;
             }
             x = xnext;
         }
@@ -125,6 +211,10 @@ impl Raster {
             p = pn;
         }
         self.draw_line(&p, p2);
+    }
+
+    pub fn dump(&self) -> String {
+        return format!("coeffs: {:?} {:?}\ndata: {:?}", self.coeff_x, self.coeff_y, self.a.iter().filter(|&&x| x != 0.).collect::<Vec<_>>());
     }
 
     /*

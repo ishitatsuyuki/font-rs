@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(target_arch = "x86_64")]
 use std::mem;
 
 #[cfg(target_arch = "x86_64")]
@@ -73,9 +74,8 @@ pub fn accumulate(src: &[f32]) -> Vec<u8> {
         .map(|c| {
             // This would translate really well to SIMD
             acc += c;
-            let y = acc.abs();
-            let y = if y < 1.0 { y } else { 1.0 };
-            (255.0 * y) as u8
+            let y = (-acc).min(1.0).max(0.0);
+            (255.0 * y + 0.5) as u8
         })
         .collect()
 }

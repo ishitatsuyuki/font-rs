@@ -1,3 +1,5 @@
 Cargo.lock
 target
-
+pkg
+node_modules
+dist

@@ -18,5 +18,7 @@
 pub mod macros;
 pub mod accumulate;
 pub mod font;
+#[cfg(feature = "font-kit")]
+pub mod font_kit;
 pub mod geom;
 pub mod raster;
