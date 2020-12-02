@@ -74,7 +74,7 @@ pub fn accumulate(src: &[f32]) -> Vec<u8> {
         .map(|c| {
             // This would translate really well to SIMD
             acc += c;
-            let y = (-acc).min(1.0).max(0.0);
+            let y = acc.abs().min(1.0);
             (255.0 * y + 0.5) as u8
         })
         .collect()

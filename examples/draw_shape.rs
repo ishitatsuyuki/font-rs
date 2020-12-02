@@ -59,8 +59,8 @@ fn draw_shape(r: &mut Raster, s: f32) {
 }
 
 fn main() {
-    let w = 400;
-    let h = 400;
+    let w = 512;
+    let h = 512;
     let mut r = Raster::new(w, h);
     draw_shape(&mut r, 4.0);
     let mut o = stdout();
