@@ -47,8 +47,6 @@ fn recip(x: f32) -> f32 {
 
 impl Raster {
     pub fn new(w: usize, h: usize) -> Raster {
-        let b = 0.;
-        let c = 0.;
         Raster {
             w: w,
             h: h,
@@ -99,12 +97,12 @@ impl Raster {
                 let p11 = base(1. - x1f, 1. - x0f, 1. - y1f, 1. - y0f);
                 let full0 = full(y0f, y1f);
                 let full1 = full(1. - y1f, 1. - y0f);
-                self.a[linestart_x0i as usize] += dir * (full1 - p01);
-                self.a[linestart_x0i as usize + 1] += dir * (p01 + p11);
-                self.a[linestart_x0i as usize + 2] += dir * (full1 - p11);
-                self.a[linestart_x0i_1 as usize] += dir * (full0 - p00);
-                self.a[linestart_x0i_1 as usize + 1] += dir * (p00 + p10);
-                self.a[linestart_x0i_1 as usize + 2] += dir * (full0 - p10);
+                self.a[linestart_x0i_1 as usize] += dir * p10;
+                self.a[linestart_x0i_1 as usize + 1] += dir * (2. * full0 - p00 - p10);
+                self.a[linestart_x0i_1 as usize + 2] += dir * p00;
+                self.a[linestart_x0i as usize] += dir * p11;
+                self.a[linestart_x0i as usize + 1] += dir * (2. * full1 - p01 - p11);
+                self.a[linestart_x0i as usize + 2] += dir * p01;
             } else {
                 for xi in x0i..x1i {
                     // TODO: not left and right
@@ -122,12 +120,12 @@ impl Raster {
                     let p11 = base(1. - x1f, 1. - x0f, 1. - y1f, 1. - y0f);
                     let full0 = full(y0f, y1f);
                     let full1 = full(1. - y1f, 1. - y0f);
-                    self.a[linestart_x0i as usize] += dir * (full1 - p01);
-                    self.a[linestart_x0i as usize + 1] += dir * (p01 + p11);
-                    self.a[linestart_x0i as usize + 2] += dir * (full1 - p11);
-                    self.a[linestart_x0i_1 as usize] += dir * (full0 - p00);
-                    self.a[linestart_x0i_1 as usize + 1] += dir * (p00 + p10);
-                    self.a[linestart_x0i_1 as usize + 2] += dir * (full0 - p10);
+                    self.a[linestart_x0i_1 as usize] += dir * p10;
+                    self.a[linestart_x0i_1 as usize + 1] += dir * (2. * full0 - p00 - p10);
+                    self.a[linestart_x0i_1 as usize + 2] += dir * p00;
+                    self.a[linestart_x0i as usize] += dir * p11;
+                    self.a[linestart_x0i as usize + 1] += dir * (2. * full1 - p01 - p11);
+                    self.a[linestart_x0i as usize + 2] += dir * p01;
                 }
             }
             x = xnext;
