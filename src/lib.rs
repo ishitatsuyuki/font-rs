@@ -1,3 +1,4 @@
+#![feature(array_value_iter)]
 // Copyright 2016 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +19,7 @@
 pub mod macros;
 pub mod accumulate;
 pub mod font;
-#[cfg(feature = "font-kit")]
-pub mod font_kit;
 pub mod geom;
 pub mod raster;
+#[cfg(feature = "freetype")]
+pub mod freetype;

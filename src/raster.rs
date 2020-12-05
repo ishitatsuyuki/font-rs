@@ -14,12 +14,12 @@
 
 //! An antialiased rasterizer for quadratic Beziers
 
+use std::array::IntoIter;
+
+use kurbo::{flatten, PathEl};
+
 use crate::accumulate::accumulate;
 use crate::geom::Point;
-
-// TODO: sort out crate structure. Right now we want this when compiling raster as a binary,
-// but need it commented out when compiling showttf
-//mod geom;
 
 pub struct Raster {
     w: usize,
@@ -28,21 +28,11 @@ pub struct Raster {
 }
 
 fn base(x0: f32, x1: f32, y0: f32, y1: f32) -> f32 {
-    assert!(0. <= x0 && x0 <= 1.);
-    assert!(0. <= x1 && x1 <= 1.);
-    assert!(-0.01 <= y0 && y0 <= 1.01, "y0: {}", y0);
-    assert!(-0.01 <= y1 && y1 <= 1.01, "y1: {}", y1);
-    assert!(y1 >= y0);
     (x0 * x0 * (3. * y0 + y1) + 2. * x0 * x1 * (y0 + y1) + x1 * x1 * (y0 + 3. * y1)) * (y1 - y0) / 24.
 }
 
 fn full(y1: f32, y2: f32) -> f32 {
     (y2 * y2 - y1 * y1) / 4.
-}
-
-// TODO: is there a faster way? (investigate whether approx recip is good enough)
-fn recip(x: f32) -> f32 {
-    x.recip()
 }
 
 impl Raster {
@@ -66,12 +56,13 @@ impl Raster {
         };
         let dxdy = (p1.x - p0.x) / (p1.y - p0.y);
         let dydx = (p1.y - p0.y) / (p1.x - p0.x);
+        let padding = 1;
         let mut x = p0.x;
-        let y0 = p0.y as usize; // note: implicit max of 0 because usize (TODO: really true?)
+        let y0 = p0.y as usize; // note: implicit max of 0 because usize (https://github.com/rust-lang/rust/issues/10184)
         if p0.y < 0.0 {
             x -= p0.y * dxdy;
         }
-        for y in y0..self.h.min(p1.y.ceil() as usize) {
+        for y in y0..(self.h - padding).min(p1.y.ceil() as usize) {
             let y0 = (y as f32).max(p0.y);
             let y1 = ((y + 1) as f32).min(p1.y);
             let dy = y1 - y0;
@@ -83,10 +74,13 @@ impl Raster {
             let x1i = x1ceil as isize;
             let linestart_x0i = (y * self.w) as isize + x0i;
             let linestart_x0i_1 = linestart_x0i + self.w as isize;
+            // TODO: proper clipping
             if linestart_x0i < 0 {
                 continue; // oob index
             }
             if x1i <= x0i + 1 {
+                // This branch is mostly a duplicate of the general case in the else branch, but
+                // handles the case where x0 == x1 and dy/dx would become NaN properly
                 let x0f = x - x0floor;
                 let x1f = xnext - x0floor;
                 let y0f = y0.fract();
@@ -133,41 +127,24 @@ impl Raster {
     }
 
     pub fn draw_quad(&mut self, p0: &Point, p1: &Point, p2: &Point) {
-        //println!("draw_quad {} {} {}", p0, p1, p2);
-        let devx = p0.x - 2.0 * p1.x + p2.x;
-        let devy = p0.y - 2.0 * p1.y + p2.y;
-        let devsq = devx * devx + devy * devy;
-        if devsq < 0.333 {
-            self.draw_line(p0, p2);
-            return;
-        }
-        let tol = 3.0;
-        let n = 1 + (tol * (devx * devx + devy * devy)).sqrt().sqrt().floor() as usize;
-        //println!("n = {}", n);
-        let mut p = *p0;
-        let nrecip = recip(n as f32);
-        let mut t = 0.0;
-        for _i in 0..n - 1 {
-            t += nrecip;
-            let pn = Point::lerp(t, &Point::lerp(t, p0, p1), &Point::lerp(t, p1, p2));
-            self.draw_line(&p, &pn);
-            p = pn;
-        }
-        self.draw_line(&p, p2);
+        self.draw_path(IntoIter::new([PathEl::MoveTo((*p0).into()), PathEl::QuadTo((*p1).into(), (*p2).into())]))
     }
 
-
-    /*
-    fn get_bitmap_fancy(&self) -> Vec<u8> {
-        let mut acc = 0.0;
-        // This would translate really well to SIMD
-        self.a[0..self.w * self.h].iter().map(|&a| {
-            acc += a;
-            (255.0 * acc.abs().min(1.0)) as u8
-            //(255.5 * (0.5 + 0.4 * acc)) as u8
-        }).collect()
+    pub fn draw_path(&mut self, iter: impl IntoIterator<Item=PathEl>) {
+        let mut prev = None;
+        flatten(iter, 1. / 16., |el| {
+            match el {
+                PathEl::MoveTo(p) => {
+                    prev = Some(p);
+                }
+                PathEl::LineTo(p) => {
+                    self.draw_line(&prev.unwrap().into(), &p.into());
+                    prev = Some(p);
+                }
+                _ => unreachable!()
+            }
+        });
     }
-*/
 
     pub fn get_bitmap(&self) -> Vec<u8> {
         accumulate(&self.a[0..self.w * self.h])

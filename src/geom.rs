@@ -24,8 +24,8 @@ pub struct Point {
 
 impl Point {
     pub fn new<T>(x: T, y: T) -> Point
-    where
-        T: Into<f32>,
+        where
+            T: Into<f32>,
     {
         Point {
             x: x.into(),
@@ -44,6 +44,18 @@ impl Point {
 impl Debug for Point {
     fn fmt(&self, f: &mut Formatter) -> Result {
         write!(f, "({}, {})", self.x, self.y)
+    }
+}
+
+impl Into<kurbo::Point> for Point {
+    fn into(self) -> kurbo::Point {
+        kurbo::Point::new(self.x as f64, self.y as f64)
+    }
+}
+
+impl From<kurbo::Point> for Point {
+    fn from(p: kurbo::Point) -> Point{
+        Point::new(p.x as f32, p.y as f32)
     }
 }
 

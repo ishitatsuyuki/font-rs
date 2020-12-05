@@ -54,7 +54,7 @@ fn inverse_trc(gamma: f32, luma: f32) -> f32 {
 #[wasm_bindgen]
 pub fn render(font_bytes: &[u8], text: &str) -> Box<[u8]> {
     utils::set_panic_hook();
-    let gamma = 1.8;
+    let gamma = 0.0;
     let gamma_lut: Vec<_> = (0..256).map(|x| x as f32 / 255.).map(|x| (inverse_trc(gamma, x) * 255. + 0.5) as u8).collect();
     let size = 12;
     let font = parse(font_bytes).unwrap();
