@@ -14,6 +14,13 @@
 
 //! An antialiased rasterizer for quadratic Beziers
 
+
+// A macro to provide `println!(..)`-style syntax for `console.log` logging.
+macro_rules! log {
+    ( $( $t:tt )* ) => {
+        web_sys::console::log_1(&format!( $( $t )* ).into());
+    }
+}
 use std::array::IntoIter;
 
 use kurbo::{flatten, PathEl};
@@ -45,7 +52,7 @@ impl Raster {
     }
 
     pub fn draw_line(&mut self, p0: &Point, p1: &Point) {
-        //println!("draw_line {} {}", p0, p1);
+        // log!("draw_line {:?} {:?}", p0, p1);
         if (p0.y - p1.y).abs() <= f32::EPSILON {
             return;
         }
